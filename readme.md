@@ -16,7 +16,7 @@ The application allows you to browse through a list of wines, as well as add, up
 # Installation #
 
 ```
-git clone git://github.com/rethinkdb/nodecellar.git
+git clone git://github.com/rethinkdb/nodecellar-rethinkdb.git
 npm install
 ```
 
@@ -27,7 +27,7 @@ _Note_: If you don't have RethinkDB installed, you can follow [these instruction
 Running the app is as simple as:
 
 ```
-node app
+node server
 ```
 
 Then open a browser: <http://localhost:3000>.
@@ -43,5 +43,5 @@ If you want to enable logging for the database queries (see [debug docs](https:/
 for more configuration options):
 
 ```
-DEBUG=rdb node app
+DEBUG=rdb node server
 ```
