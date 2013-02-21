@@ -1,0 +1,16 @@
+{
+    "name": "wine-cellar",
+    "description": "Wine Cellar Application",
+    "version": "0.0.1",
+    "private": true,
+    "dependencies": {
+        "express": "3.x",
+        "socket.io": "0.9.10",
+        "debug": ">=0.7.0",        
+        "rethinkdb": "*"        
+    },
+    "engines": {
+        "node": "0.8.4",
+        "npm": "1.1.49"
+    }
+}
