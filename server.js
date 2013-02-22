@@ -20,14 +20,16 @@ app.post('/wines', wine.addWine);
 app.put('/wines/:id', wine.updateWine);
 app.delete('/wines/:id', wine.deleteWine);
 
+// #### RethinkDB connection details
+
 var dbConfig = {
-  'host': process.env.RDB_HOST || 'localhost',
-  'port': parseInt(process.env.RDB_PORT) || 28015,
-  'db'  : process.env.RDB_DB || 'winecellar',
+  host : process.env.RDB_HOST || 'localhost',
+  port : parseInt(process.env.RDB_PORT) || 28015,
+  db   : process.env.RDB_DB || 'winecellar',
 };  
 
 // Using a single db connection for the app
-rdb.connect({host: dbConfig['host'], port: dbConfig['port']}, 
+rdb.connect({host: dbConfig.host, port: dbConfig.port}, 
   function(connection) {
     // set up the database
     wine.setupDB(dbConfig, connection);

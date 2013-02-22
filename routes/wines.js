@@ -1,29 +1,58 @@
+// A fork of the Christophe Coenraets's [Node Cellar](https://github.com/ccoenraets/nodecellar)
+// sample app using Backbone.js, Twitter Bootstrap, Node.js, Express, and RethinkDB.
+//
+// See the [GitHub README](https://github.com/rethinkdb/nodecellar-rethinkdb/blob/master/readme.md)
+// for details of the complete stack, installation, and running the app.
+
+
+// This module uses a single database connection which is 
+// initialized before the app starts serving requests. 
+// See `server.js` for details.
+
 var r = require('rethinkdb'),
     debug = require('debug')('rdb'),
     self = this;
 
 
+// #### Retrieving a single document
+
+/**
+ * Every "wine" document is assigned a unique id when created.
+ * Retrieving a document by its id can be done using the
+ * [`get`](http://www.rethinkdb.com/api/#js:selecting_data-get) function.
+ *
+ * RethinkDB will use the primary key index to fetch the result.
+ */
 exports.findById = function (req, res) {
   var id = req.params.id;
   debug('findById: %s', id);
 
   self.connection.run(r.table('wines').get(id), function(result) {
     if (result && result.name !== 'Runtime Error') {
-      debug("findById: %s => %j", id, result);
       res.send(result);
     }
     else {
       debug("[ERROR] findById: %s => %j", id, result['message']);
       res.send({'error': result['message']});
     }
+    return false; // this callback should not be invoked again 
   });
 };
 
+// #### Retrieving all documents
+
 /**
- * Current implementation of the Backbone models requires
+ * To retrieve all documents in a table, we can use
+ * the [`table`](http://www.rethinkdb.com/api/#js:selecting_data-table) function.
+ * 
+ * Results are [`collect`](http://www.rethinkdb.com/api/#js:accessing_rql-collect)ed
+ * and passed as an array to the callback function.
+ *
+ * _Todo_: The current implementation of the Backbone models requires
  * returning all results for pagination. Ideally, this
  * should return only the current page results and the 
- * total number of wines for paginating through all wines.
+ * total number of wines for paginating through.
+ * _Pull requests are welcome!_
  */
 exports.findAll = function (req, res) {
 	self.connection.run(r.table('wines'), {})
@@ -38,6 +67,19 @@ exports.findAll = function (req, res) {
       });
 };
 
+// #### Creating a new document
+
+/**
+ * To save a new wine document we are using 
+ * [`insert`](http://www.rethinkdb.com/api/#js:writing_data-insert). 
+ *
+ * If the new document doesn't provide an `id` attribute, then the
+ * database will automatically assign a new id.
+ *
+ * The `insert` op returns an object specifying the number
+ * of successfully created objects and their corresponding IDs:
+ * `{ "inserted": 1, "errors": 0, "generated_keys": ["b3426201-5767-6036-4a21-99921974ab84"] }`
+ */
 exports.addWine = function (req, res) {
 	var wine = req.body;
 	debug('Adding wine: %j', wine);
@@ -53,6 +95,17 @@ exports.addWine = function (req, res) {
 	});
 };
 
+// #### Updating a document
+
+/**
+ * To update a document when knowing its `id` is done by
+ * chaining together two functions: 
+ * [`get`](http://www.rethinkdb.com/api/#js:selecting_data-get) and
+ * [`update`](http://www.rethinkdb.com/api/#js:writing_data-update).
+ *
+ * Chained operations are always executed in the database and 
+ * _not on the client side_.
+ */
 exports.updateWine = function (req, res) {
   var id = req.params.id;
   var wine = req.body;
@@ -69,6 +122,17 @@ exports.updateWine = function (req, res) {
 	});
 };
 
+// #### Deleting a document
+
+/**
+ * To delete a single document when having its `id` can be done
+ * by firstly [`get`](http://www.rethinkdb.com/api/#js:selecting_data-get)-ing
+ * the document by `id` and then using the 
+ * [`del`](http://www.rethinkdb.com/api/#js:writing_data-delete) function.
+ *
+ * ReQL chained operations are executed together in the database and 
+ * they return the final result. There is a single database roundtrip.
+ */
 exports.deleteWine = function (req, res) {
   var id = req.params.id;
   debug('Deleting wine: %s', id);
@@ -83,9 +147,19 @@ exports.deleteWine = function (req, res) {
 };
 
 
-/*--------------------------------------------------------------------------------------------------------------------*/
-// Populate database with sample data -- Only used once: the first time the application is started.
-// You'd typically not find this code in a real-life app, since the database would already exist.
+// #### Database setup
+
+/** 
+ * We initialize the database by performing the following operations:
+ *
+ * -   create the database `RDB_DB` (defaults to `nodecellar`) using [`dbCreate`](http://www.rethinkdb.com/api/#js:manipulating_databases-db_create)
+ * -   create the `wines` table using [`tableCreate`](http://www.rethinkdb.com/api/#js:manipulating_tables-table_create)
+ *
+ * If the table didn't exist than we populate the table with some sample data using a
+ * bulk [`insert`](http://www.rethinkdb.com/api/#js:writing_data-insert).
+ *
+ * You'd typically not find this code in a real-life app, since the database would already exist.
+ */
 exports.setupDB = function(dbConfig, connection) {
 	var wines = [
     {
@@ -323,10 +397,11 @@ exports.setupDB = function(dbConfig, connection) {
         picture: "waterbrook.jpg"
     }];
 
-  // Create the DB and the table and insert sample data
-  connection.run(r.dbCreate(dbConfig['db']), function(result) {
+  // Create the DB using [`dbCreate`](http://www.rethinkdb.com/api/#js:manipulating_databases-db_create):
+  connection.run(r.dbCreate(dbConfig.db), function(result) {
+    // Create the `wines` table using [`tableCreate`](http://www.rethinkdb.com/api/#js:manipulating_tables-table_create):
   	connection.run(r.db(dbConfig['db']).tableCreate('wines'), function(result) {
-    	// insert sample data only if the table didn't exist
+    	// We insert the sample data iif the table didn't exist:
 			if (result === undefined) {
 				connection.run(r.db(dbConfig['db']).table('wines').insert(wines), function(result) {
 					debug("Inserted %s sample wines into table 'wines' in db '%s'", result['inserted'], dbConfig['db']);
@@ -338,3 +413,22 @@ exports.setupDB = function(dbConfig, connection) {
     return false;
   });
 };
+
+// ### Tips and Tricks
+//
+// #### Updating a document vs updating a set of documents in a single operation
+//
+// This app. implements a single document update using the
+// chained `get(id).update(doc)` functions. You can update
+// multiple documents in a single database roundtrip by
+// firstly filtering the documents to be updated using [`filter`](http://www.rethinkdb.com/api/#js:selecting_data-filter)
+// and then an [`update`](http://www.rethinkdb.com/api/#js:writing_data-update). 
+//
+// #### `update` vs `replace`
+//
+// ReQL provides multiple mutation operations: [`update`](http://www.rethinkdb.com/api/#js:writing_data-update)
+// and [`replace`](http://www.rethinkdb.com/api/#js:writing_data-replace). Both can
+// be used to modify one or multiple rows. Their behavior is different though:
+//
+// *   `update` will merge existing rows with the new values
+// *   `replace` will completely replace the existing rows with the new values
