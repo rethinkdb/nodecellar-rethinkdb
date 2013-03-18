@@ -29,8 +29,12 @@ var dbConfig = {
 };  
 
 // Using a single db connection for the app
-rdb.connect({host: dbConfig.host, port: dbConfig.port}, 
-  function(connection) {
+rdb.connect({host: dbConfig.host, port: dbConfig.port}, function(err, connection) {
+  if(err) {
+    console.log("ERROR: %s:%s", err.name, err.msg);
+    process.exit(1);
+  }
+  else {
     // set up the database
     wine.setupDB(dbConfig, connection);
     // set up the default database for the connection
@@ -41,9 +45,5 @@ rdb.connect({host: dbConfig.host, port: dbConfig.port},
     http.createServer(app).listen(app.get('port'), function () {
       console.log("Express server listening on port " + app.get('port'));
     });
-  },
-  function(err) {
-    var errMsg = util.format("Failed connecting to RethinkDB instance on {host: %s, port: %s}", dbConfig['host'], dbConfig['port']);
-    throw Error(errMsg);
   }
-);
+});

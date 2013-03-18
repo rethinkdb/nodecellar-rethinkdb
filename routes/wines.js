@@ -11,6 +11,7 @@
 
 var r = require('rethinkdb'),
     debug = require('debug')('rdb'),
+    assert = require('assert'),
     self = this;
 
 
@@ -24,19 +25,17 @@ var r = require('rethinkdb'),
  * RethinkDB will use the primary key index to fetch the result.
  */
 exports.findById = function (req, res) {
-  var id = req.params.id;
-  debug('findById: %s', id);
+    var id = req.params.id;
+    debug('findById: %s', id);
 
-  self.connection.run(r.table('wines').get(id), function(result) {
-    if (result && result.name !== 'Runtime Error') {
-      res.send(result);
-    }
-    else {
-      debug("[ERROR] findById: %s => %j", id, result['message']);
-      res.send({'error': result['message']});
-    }
-    return false; // this callback should not be invoked again 
-  });
+    r.table('wines').get(id).run(self.connection, function(err, result) {
+        if(err) {
+            debug("[ERROR] findById: %s:%s\n%s", err.name, err.msg, err.message);
+        }
+        else {
+            res.send(result);
+        }
+    })
 };
 
 // #### Retrieving all documents
@@ -55,16 +54,17 @@ exports.findById = function (req, res) {
  * _Pull requests are welcome!_
  */
 exports.findAll = function (req, res) {
-	self.connection.run(r.table('wines'), {})
-      .collect(function(results) {
-      	if(results && results.length === 1 && results[0]['name'] === 'Runtime Error') {
-      		debug("[ERROR] findAll: %s", results[0]['message']);
-          res.send([]);
-        }
-        else {
-          res.send(results);
-        }
-      });
+    r.table('wines').run(self.connection, function(err, cursor) {
+        cursor.toArray(function(err, results) {
+            if(err) {
+                debug("[ERROR] %s:%s\n%s", err.name, err.msg, err.message);
+                res.send([]);
+            }
+            else{
+                res.send(results);
+            }
+        });
+    });
 };
 
 // #### Creating a new document
@@ -82,17 +82,26 @@ exports.findAll = function (req, res) {
  */
 exports.addWine = function (req, res) {
 	var wine = req.body;
+    // workaround for https://github.com/rethinkdb/rethinkdb/issues/498
+    delete wine.id;
 	debug('Adding wine: %j', wine);
 
-	self.connection.run(r.table('wines').insert("kjdhkjshdjsd"), function(result) {
-		if (result && result['inserted'] === 1) {
-			wine['id'] = result['generated_keys'][0];
-			res.send(wine);
-		}
-		else {
-			res.send({'error': 'An error occurred when adding the new wine (' + result['first_error'] + ')'})
-		}
-	});
+    r.table('wines').insert(wine).run(self.connection, function(err, result) {
+        if(err) {
+            debug("[ERROR] addWine %s:%s\n%s", err.name, err.msg, err.message);
+            res.send({error: 'An error occurred when adding the new wine (' + err.msg + ')'})
+        }
+        else {
+            if(result && result.inserted === 1) {
+                wine.id = result.generated_keys[0];
+                res.send(wine);
+            }
+            else {
+                debug("[ERROR] Failed to create new wine record: %j (%j)", wine, result);
+                res.send({error: 'An error occurred when adding the new wine document'});
+            }
+        }
+    });
 };
 
 // #### Updating a document
@@ -107,19 +116,23 @@ exports.addWine = function (req, res) {
  * _not on the client side_.
  */
 exports.updateWine = function (req, res) {
-  var id = req.params.id;
-  var wine = req.body;
-  wine['id'] = id;
-  debug('Updating wine: %j', wine);
+    var id = req.params.id, wine = req.body;
+    wine.id = id;
+    debug('Updating wine: %j', wine);
 
-  self.connection.run(r.table('wines').get(id).update(wine), function(result) {
-		if(result && result['updated'] === 1) {
-			res.send(wine);
-		}
-		else {
-			res.send({'error': 'An error occurred when updating the wine with id: ' + id});
-		}
-	});
+    r.table('wines').get(id).update(wine).run(self.connection, function(err, result) {
+        if(result && result.replaced === 1) {
+            res.send(wine);
+        }
+        else if(err) {
+            debug("[ERROR] updateWine %s:%s\n%s", err.name, err.msg, err.message);
+            res.send({error: 'An error occurred when updating the wine with id: ' + id});
+        }
+        else {
+            debug("[ERROR] updateWine (%s): %j", id, result);
+            res.send({error: 'An error occurred when updating the wine with id: ' + id});
+        }
+    });
 };
 
 // #### Deleting a document
@@ -134,16 +147,23 @@ exports.updateWine = function (req, res) {
  * they return the final result. There is a single database roundtrip.
  */
 exports.deleteWine = function (req, res) {
-  var id = req.params.id;
-  debug('Deleting wine: %s', id);
-	self.connection.run(r.db(dbConfig['db']).table('wines').get(id).del(), function(result) {
-		if(result && result['deleted'] === 1) {
-			res.send(req.body);
-		}
-		else {
-			res.send({'error': 'An error occurred when deleting the wine with id:' + id});
-		}
-	});
+    var id = req.params.id;
+    debug('Deleting wine: %s', id);
+
+    r.table('wines').get(id).delete().run(self.connection, function(err, result) {
+        debug("[ERROR] deleteWine %j, %j", err, result);
+        if(err) {
+            debug("[ERROR] deleteWine %s:%s\n%s", err.name, err.msg, err.message);
+            res.send({error: 'An error occurred when deleting the wine with id:' + id});
+        }
+        else if (result.deleted === 1) {
+            res.send(req.body);
+        }
+        else {
+            debug("[ERROR] deleteWine (%s) :%j", id, result);
+            res.send({error: 'An error occurred when deleting the wine with id:' + id});
+        }
+    });
 };
 
 
@@ -397,20 +417,19 @@ exports.setupDB = function(dbConfig, connection) {
         picture: "waterbrook.jpg"
     }];
 
-  // Create the DB using [`dbCreate`](http://www.rethinkdb.com/api/#js:manipulating_databases-db_create):
-  connection.run(r.dbCreate(dbConfig.db), function(result) {
-    // Create the `wines` table using [`tableCreate`](http://www.rethinkdb.com/api/#js:manipulating_tables-table_create):
-  	connection.run(r.db(dbConfig['db']).tableCreate('wines'), function(result) {
-    	// We insert the sample data iif the table didn't exist:
-			if (result === undefined) {
-				connection.run(r.db(dbConfig['db']).table('wines').insert(wines), function(result) {
-					debug("Inserted %s sample wines into table 'wines' in db '%s'", result['inserted'], dbConfig['db']);
-					return false;
-				})
-			}
-			return false;
+    // Create the DB using [`dbCreate`](http://www.rethinkdb.com/api/#js:manipulating_databases-db_create):
+    r.dbCreate(dbConfig.db).run(connection, function(err, result) {
+        // Create the `wines` table using [`tableCreate`](http://www.rethinkdb.com/api/#js:manipulating_tables-table_create):
+        r.db(dbConfig.db).tableCreate('wines').run(connection, function(err, result) {
+            // We insert the sample data iif the table didn't exist:
+            if(result && result.created === 1) {
+                r.db(dbConfig.db).table('wines').insert(wines).run(connection, function(err, result) {
+                    if(result) {
+                        debug("Inserted %s sample wines into table 'wines' in db '%s'", result.inserted, dbConfig['db']);
+                    }
+                });
+            }
     });
-    return false;
   });
 };
 
